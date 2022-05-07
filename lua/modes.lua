@@ -143,7 +143,7 @@ M.setup = function(opts)
 	opts = opts or default_config
 	if opts.focus_only then
 		print(
-			'modes.nvim – `focus_only` has been removed and is now the default behaviour'
+		'modes.nvim – `focus_only` has been removed and is now the default behaviour'
 		)
 	end
 
@@ -163,55 +163,26 @@ M.setup = function(opts)
 		M.define()
 	end, 15)
 
+	-- Unfortunately on_key cannot be entirely avoided as of this comment,
+	-- there are no event groups for yank or delete that can be easily detected
 	vim.on_key(function(key)
 		local ok, current_mode = pcall(vim.fn.mode)
 		if not ok then
 			M.reset()
 		end
 
-		if current_mode == 'i' then
-			if key == utils.replace_termcodes('<esc>') then
-				M.reset()
-			end
-		end
-
-		if current_mode == 'n' then
-			if key == utils.replace_termcodes('<esc>') then
-				M.reset()
-			end
-
+		if current_mode ~= 'i' then
 			if key == 'y' then
-				if operator_started then
-					M.reset()
-				else
-					M.highlight('copy')
-					operator_started = true
-				end
+				vim.api.nvim_exec_autocmds(
+					'User',
+					{ group = 'ModesGroup', pattern = 'ModesYank' }
+				)
 			end
-
 			if key == 'd' then
-				if operator_started then
-					M.reset()
-				else
-					M.highlight('delete')
-					operator_started = true
-				end
-			end
-
-			if
-				(key:lower() == 'v' or key == utils.replace_termcodes('<c-v>'))
-				and not operator_started
-			then
-				M.highlight('visual')
-			end
-		end
-
-		if
-			current_mode:lower() == 'v'
-			or current_mode == utils.replace_termcodes('<c-v>')
-		then
-			if key == utils.replace_termcodes('<esc>') then
-				M.reset()
+				vim.api.nvim_exec_autocmds(
+					'User',
+					{ group = 'ModesGroup', pattern = 'ModesDelete' }
+				)
 			end
 		end
 	end)
@@ -222,22 +193,85 @@ M.setup = function(opts)
 		callback = M.define,
 	})
 
-	---Set insert highlight
-	vim.api.nvim_create_autocmd('InsertEnter', {
-		pattern = '*',
+	local ModesGroup = vim.api.nvim_create_augroup(
+		'ModesGroup',
+		{ clear = true }
+	)
+
+	-- Set default highlight
+	vim.api.nvim_create_autocmd('User', {
+		pattern = 'ModesDefault',
+		callback = function()
+			M.highlight('default')
+		end,
+		group = ModesGroup,
+	})
+
+	-- Set visual highlight
+	vim.api.nvim_create_autocmd('User', {
+		pattern = 'ModesVisual',
+		callback = function()
+			M.highlight('visual')
+		end,
+		group = ModesGroup,
+	})
+
+	-- Set delete highlight
+	vim.api.nvim_create_autocmd('User', {
+		pattern = 'ModesDelete',
+		callback = function()
+			M.highlight('delete')
+		end,
+		group = ModesGroup,
+	})
+
+	-- Set insert highlight
+	vim.api.nvim_create_autocmd('User', {
+		pattern = 'ModesInsert',
 		callback = function()
 			M.highlight('insert')
 		end,
+		group = ModesGroup,
 	})
 
-	---Reset highlights
-	vim.api.nvim_create_autocmd(
-		{ 'CmdlineLeave', 'InsertLeave', 'TextYankPost', 'WinLeave' },
-		{
-			pattern = '*',
-			callback = M.reset,
-		}
-	)
+	-- Set yank highlight
+	vim.api.nvim_create_autocmd('User', {
+		pattern = 'ModesYank',
+		callback = function()
+			M.highlight('copy')
+		end,
+		group = ModesGroup,
+	})
+
+	-- Invocation for insert mode
+	vim.api.nvim_create_autocmd('ModeChanged', {
+		pattern = '*:[iIsS\x16]*',
+		callback = function()
+			vim.api.nvim_exec_autocmds(
+				'User',
+				{ group = 'ModesGroup', pattern = 'ModesInsert' }
+			)
+		end,
+	})
+
+	-- Invocation for visual mode
+	vim.api.nvim_create_autocmd('ModeChanged', {
+		pattern = '*:[vV\x16]*',
+		callback = function()
+			vim.api.nvim_exec_autocmds(
+				'User',
+				{ group = 'ModesGroup', pattern = 'ModesVisual' }
+			)
+		end,
+	})
+
+	-- Reset highlight colors
+	vim.api.nvim_create_autocmd('ModeChanged', {
+		pattern = '*:[nN\x16]',
+		callback = function()
+			M.reset()
+		end,
+	})
 
 	---Enable managed UI initially
 	M.enable_managed_ui()
